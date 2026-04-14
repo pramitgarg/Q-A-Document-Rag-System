@@ -205,3 +205,30 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# ==========================================
+# Project-specific
+# ==========================================
+
+# ChromaDB vector database (legacy, no longer used)
+vectordb/
+
+# Weaviate data (managed by Docker volume)
+weaviate_data/
+
+# User-uploaded PDFs (runtime data, not source code)
+Data/uploads/*.pdf
+
+# Docker config backup
+.docker/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Gemini
+.gemini/

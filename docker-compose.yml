@@ -1,0 +1,102 @@
+# ==========================================
+# Docker Compose - Customer Support AI Chatbot
+# Services: Ollama (LLM server) + Weaviate (Vector DB) + App (FastAPI + Gradio)
+# ==========================================
+
+services:
+  # -------------------------------------------
+  # Ollama - Local LLM server (serves Llama 3.2)
+  # -------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=-1          # OPT-2: Keep model loaded permanently (no cold-start)
+      - OLLAMA_NUM_PARALLEL=1         # OPT-7: Optimize for single-request throughput
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------
+  # Model Puller - Pulls qwen3.5:9b on first run
+  # -------------------------------------------
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: ollama-pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    entrypoint: ["sh", "-c", "ollama pull llama3.2:3b && ollama pull nomic-embed-text"]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    restart: "no"
+
+  # -------------------------------------------
+  # Weaviate - Vector Database
+  # -------------------------------------------
+  weaviate:
+    image: cr.weaviate.io/semitechnologies/weaviate:1.28.2
+    container_name: weaviate
+    command:
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8080'
+      - --scheme
+      - http
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    volumes:
+      - weaviate_data:/var/lib/weaviate
+    restart: unless-stopped
+    environment:
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      CLUSTER_HOSTNAME: 'node1'
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/v1/.well-known/ready"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------
+  # App - FastAPI + Gradio RAG Application
+  # -------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: chatbot-app
+    ports:
+      - "8000:8000"          # FastAPI backend
+      - "7860:7860"          # Gradio frontend
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEAVIATE_URL=weaviate
+      - WEAVIATE_PORT=8080
+      - WEAVIATE_GRPC_PORT=50051
+      - LLM_MODEL=llama3.2:3b
+      - EMBEDDING_MODEL=nomic-embed-text
+      - API_URL=http://localhost:8000
+    volumes:
+      - ./Data:/app/Data                   # Mount PDF documents & uploads
+    depends_on:
+      ollama:
+        condition: service_healthy
+      weaviate:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  weaviate_data:
